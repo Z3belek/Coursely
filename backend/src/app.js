@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const cors = require('cors');
 const multer = require('multer');
+const axios = require('axios');
+const cheerio = require('cheerio');
 
 const port = process.env.BACKEND_PORT || 4000;
 const host = process.env.BACKEND_HOST || '0.0.0.0';
@@ -13,7 +15,6 @@ app.use(cors());
 app.use(express.json());
 
 const upload = multer({ dest: 'uploads/' });
-
 const videosDir = path.join(__dirname, '..', '..', 'videos');
 const publicDir = path.join(__dirname, '..', 'public');
 const dbPath = path.join(__dirname, '..', 'database', 'profiles.db');
@@ -21,7 +22,6 @@ const dbPath = path.join(__dirname, '..', 'database', 'profiles.db');
 if (!fs.existsSync(publicDir)) {
   fs.mkdirSync(publicDir, { recursive: true });
 }
-
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error('Error al conectar con la base de datos:', err.message);
@@ -34,8 +34,10 @@ const db = new sqlite3.Database(dbPath, (err) => {
       console.error('Error al verificar la tabla progress:', err.message);
       return;
     }
+
     const hasCourseName = rows.some(row => row.name === 'courseName');
     const hasSection = rows.some(row => row.name === 'section');
+
     if (!hasCourseName || !hasSection) {
       db.run('DROP TABLE IF EXISTS progress', (err) => {
         if (err) console.error('Error al eliminar la tabla progress:', err.message);
@@ -56,7 +58,6 @@ const db = new sqlite3.Database(dbPath, (err) => {
       });
     }
   });
-
   db.run(`
     CREATE TABLE IF NOT EXISTS courses (
       folderName TEXT PRIMARY KEY,
@@ -68,13 +69,11 @@ const db = new sqlite3.Database(dbPath, (err) => {
   `, (err) => {
     if (err) console.error('Error al crear la tabla courses:', err.message);
   });
-
   db.run(`
     CREATE TABLE IF NOT EXISTS profiles (
       profileName TEXT PRIMARY KEY
     )
   `);
-
   db.run(`
     CREATE TABLE IF NOT EXISTS progress (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,15 +87,10 @@ const db = new sqlite3.Database(dbPath, (err) => {
     )
   `);
 });
-
-app.use('/public', express.static(publicDir));
-
-app.put('/courses/:courseName', upload.single('image'), (req, res) => {
+app.use('/public', express.static(publicDir)); app.put('/courses/:courseName', upload.single('image'), (req, res) => {
   const { courseName } = req.params;
   const { title, udemyId } = req.body;
-  let imagePath = null;
-
-  if (req.body.image === '' && !req.file) {
+  let imagePath = null; if (req.body.image === '' && !req.file) {
     db.get('SELECT imagePath FROM courses WHERE folderName = ?', [courseName], (err, row) => {
       if (err) {
         console.error('Error al consultar imagen previa:', err.message);
@@ -112,7 +106,7 @@ app.put('/courses/:courseName', upload.single('image'), (req, res) => {
       updateCourse(null);
     });
   } else if (req.file) {
-    const imageName = `${Date.now()}-${req.file.originalname}`.replace(/\s/g, '-');
+    const imageName = `${Date.now()}-${req.file.originalname}.replace(/\s/g, '-')`;
     const imagePathFull = path.join(publicDir, imageName);
     fs.renameSync(req.file.path, imagePathFull);
     console.log(`Imagen guardada en: ${imagePathFull}`);
@@ -126,9 +120,7 @@ app.put('/courses/:courseName', upload.single('image'), (req, res) => {
       }
       updateCourse(row?.imagePath || null);
     });
-  }
-
-  function updateCourse(imagePathValue) {
+  } function updateCourse(imagePathValue) {
     db.run(
       'UPDATE courses SET title = ?, imagePath = ?, udemyId = ? WHERE folderName = ?',
       [title || null, imagePathValue, udemyId || null, courseName],
@@ -143,13 +135,11 @@ app.put('/courses/:courseName', upload.single('image'), (req, res) => {
     );
   }
 });
-
 app.get('/video/:course/:section/:video', (req, res) => {
   const course = req.params.course;
   const section = req.params.section;
   const video = req.params.video;
   const videoPath = path.join(videosDir, course, section, `${video}.mp4`);
-
   if (fs.existsSync(videoPath)) {
     res.setHeader('Content-Type', 'video/mp4');
     res.setHeader('Accept-Ranges', 'bytes');
@@ -173,11 +163,11 @@ app.get('/video/:course/:section/:video', (req, res) => {
       const videoStream = fs.createReadStream(videoPath);
       videoStream.pipe(res);
     }
+
   } else {
     res.status(404).send('Video no encontrado');
   }
 });
-
 app.get('/courses', (req, res) => {
   db.all('SELECT folderName AS courseName, title, imagePath, udemyId FROM courses', [], (err, rows) => {
     if (err) {
@@ -212,12 +202,12 @@ app.get('/courses', (req, res) => {
           };
         });
 
-        db.run('INSERT INTO courses (folderName, title, imagePath, udemyId) VALUES (?, ?, ?, ?)', 
-          [folder, folder, null, null], 
+        db.run('INSERT INTO courses (folderName, title, imagePath, udemyId) VALUES (?, ?, ?, ?)',
+          [folder, folder, null, null],
           (err) => {
             if (err) console.error(`Error al insertar curso ${folder}:`, err.message);
           });
-        
+
         updatedCourses.push({
           courseName: folder,
           title: folder,
@@ -247,29 +237,22 @@ app.get('/courses', (req, res) => {
     }
 
     res.json(updatedCourses);
-  });
-});
 
-app.get('/profiles', (req, res) => {
+  });
+}); app.get('/profiles', (req, res) => {
   db.all('SELECT profileName FROM profiles', [], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows.map(row => row.profileName));
   });
-});
-
-app.post('/profiles', (req, res) => {
+}); app.post('/profiles', (req, res) => {
   const { profileName } = req.body;
   if (!profileName) {
     return res.status(400).json({ error: 'Se requiere un nombre de perfil' });
-  }
-
-  db.run('INSERT OR IGNORE INTO profiles (profileName) VALUES (?)', [profileName], (err) => {
+  } db.run('INSERT OR IGNORE INTO profiles (profileName) VALUES (?)', [profileName], (err) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ message: `Perfil ${profileName} creado/seleccionado`, profile: profileName });
   });
-});
-
-app.get('/profiles/:profileName/progress/:courseName', (req, res) => {
+}); app.get('/profiles/:profileName/progress/:courseName', (req, res) => {
   const { profileName, courseName } = req.params;
   console.log(`Consultando progreso inicial para profileName: ${profileName}, courseName: ${courseName}`);
   db.all('SELECT section, video, position FROM progress WHERE profileName = ? AND courseName = ? ORDER BY id DESC LIMIT 1', [profileName, courseName], (err, rows) => {
@@ -281,17 +264,13 @@ app.get('/profiles/:profileName/progress/:courseName', (req, res) => {
     const row = rows[0] || { section: '', video: '', position: 0 };
     res.json(row);
   });
-});
-
-app.post('/profiles/:profileName/progress/:courseName', (req, res) => {
+}); app.post('/profiles/:profileName/progress/:courseName', (req, res) => {
   const { profileName, courseName } = req.params;
   const { section, video, position } = req.body;
   console.log(`Intentando guardar progreso para profileName: ${profileName}, courseName: ${courseName}, section: ${section}, video: ${video}, position: ${position}`);
-
   if (!section || !video || typeof position !== 'number') {
     return res.status(400).json({ error: 'Se requieren section, video y position' });
   }
-
   db.run(
     'INSERT OR REPLACE INTO progress (profileName, courseName, section, video, position) VALUES (?, ?, ?, ?, ?)',
     [profileName, courseName, section, video, position],
@@ -311,11 +290,8 @@ app.post('/profiles/:profileName/progress/:courseName', (req, res) => {
     }
   );
 });
-
 app.get('/courses/:courseName', (req, res) => {
-  const { courseName } = req.params;
-
-  db.get(
+  const { courseName } = req.params; db.get(
     'SELECT folderName, title, imagePath, udemyId FROM courses WHERE folderName = ?',
     [courseName],
     (err, row) => {
@@ -362,13 +338,10 @@ app.get('/courses/:courseName', (req, res) => {
       courseData.sections = sectionsInfo;
       res.json(courseData);
     }
+
   );
-});
-
-app.post('/courses/sync', (req, res) => {
-  const folders = fs.readdirSync(videosDir).filter(folder => fs.statSync(path.join(videosDir, folder)).isDirectory());
-
-  db.all('SELECT folderName, imagePath FROM courses', [], (err, dbCourses) => {
+}); app.post('/courses/sync', (req, res) => {
+  const folders = fs.readdirSync(videosDir).filter(folder => fs.statSync(path.join(videosDir, folder)).isDirectory()); db.all('SELECT folderName, imagePath FROM courses', [], (err, dbCourses) => {
     if (err) {
       console.error('Error al obtener cursos de la base de datos:', err.message);
       return res.status(500).json({ error: err.message });
@@ -379,8 +352,8 @@ app.post('/courses/sync', (req, res) => {
     // Añadir nuevos cursos
     for (const folder of folders) {
       if (!dbCourseNames.includes(folder)) {
-        db.run('INSERT INTO courses (folderName, title, imagePath, udemyId) VALUES (?, ?, ?, ?)', 
-          [folder, folder, null, null], 
+        db.run('INSERT INTO courses (folderName, title, imagePath, udemyId) VALUES (?, ?, ?, ?)',
+          [folder, folder, null, null],
           (err) => {
             if (err) console.error(`Error al insertar curso ${folder}:`, err.message);
           });
@@ -409,12 +382,10 @@ app.post('/courses/sync', (req, res) => {
     });
 
     res.json({ message: 'Cursos sincronizados', courses: folders });
+
   });
-});
-
-process.on('SIGTERM', () => db.close());
-process.on('SIGINT', () => db.close());
-
-app.listen(port, host, () => {
+}); process.on('SIGTERM', () => db.close());
+process.on('SIGINT', () => db.close()); app.listen(port, host, () => {
   console.log(`Servidor escuchando en http://${host}:${port}`);
 });
+

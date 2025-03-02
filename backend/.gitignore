@@ -12,6 +12,7 @@
 
 # misc
 .dockerignore
+*.db
 .DS_Store
 *.pem
 
@@ -20,6 +21,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+
+# uploads
+*.png
+*.jpg
+*.jpeg
 
 # env files (can opt-in for committing if needed)
 .env*
